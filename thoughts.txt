@@ -1,0 +1,154 @@
+银行储蓄管理系统(银行工作人员使用)
+  tables
+	  user(id,password,power)
+		power(id,name)
+		customer(id,name,address,phonenumber)
+		account(id,cust_id,type,createdate,fixed,free,freedays,password)
+		acc_type(id,name)
+		fixeddeposit(id,account_id,money,begindate,months,status,bonusrate)
+		bonusrate(id,months,bonusrate)
+		deposit_status (id,name)
+		history(id,account_id,isfixed,money,description)
+  
+	constraint 
+	  account (fixed >= 0 , free >=0)
+		fixeddeposit ( money >= 0 , months >= 3)
+		bonusrate( bonusrate > 0)
+	  
+		foreign key 
+		  user(power ) -> power(id)
+			account(cust_id ) -> customer (id)
+			account(type) -> acc_type(id)
+			fixeddeposit (account_id ) -> account(id)
+			fixeddeposit (status ) -> deposit_status(id)
+			fixeddeposit (bonusrate ) -> bonusrate(id)
+			history(account_id) ->account(id)
+			
+	trigger
+	  account的free改变时，计算利息并加到账户中，并插入历史纪录
+
+
+
+	表操作
+		user : 增,删,改(需要同步/存储过程)
+		       查(登录)
+		customer : 增(开第一个银行账户时插入),改(修改个人信息),查
+		account : 增(开户),删
+		          改(存取款)
+		          查
+		fixeddeposit :增(存入定期存款,触发器实现,根据months决定利率,添加到对应的account)
+		              删
+	           	      改(status改变,当到期或用户提前取出时)
+					  查 
+		history : 增
+		          删
+				  查
+
+
+  具体功能
+	  工作人员登陆:user查询验证
+	    每天对定期存款判断是否到期,到期则自动转存,对活期存款的freedays加一(存储过程)
+		管理员对工作人员的信息管理:对user表操作（存储过程）
+		注册存款账户: 首次注册添加customer,添加account（存储过程）
+		定期存款 : 当添加fixeddeposit纪录时，对account的fixed修改，添加历史纪录（触发器）
+		定期自动转存 : 计算出本息和fixeddeposit中改成已到期状态,本息和加到对应account的free中,
+		               添加两条记录,定期取款,活期存款,活期利息结算（触发器）
+		定期取款(未到期): 需要提供身份证和输入密码,取出部分按照取款日期进行利息计算,剩下的按照原本的定期继续存)
+		                  算出本息和,fixeddeposit中的money = 本息和 - 取款, history中添加记录 
+		活期存取款 : 需要输入密码, 对account的free修改,添加history		
+		添加历史记录（单独一个存储过程）
+		管理员修改利率 : 对bonusrate进行修改
+		查询 :
+		  显示所有工作人员
+			显示所有customer
+		  根据身份证查询账号
+		  根据身份证历史记录
+			根据accountid查询记录
+			根据定期存款单号查询详细信息
+				
+	dao : 
+	  DatabaseUtil {
+	    execute(sql,params);
+		executeStoreProcess(spName);
+		executeQuery(sql,params);
+	  }
+	  UserDao {
+	    login(){executeQuery()}
+		add(){executeStoreProcess()}
+		updatePassword(){executeStoreProcess}
+		delete(){executeStoreProcess}
+		
+		同一个存储过程sp_user，通过传入不同参数区分增删改
+		sp_user(		  
+		  判断是否存在 
+		    存在 
+			  判断参数
+			    1(插入) : 不做操作
+				2(更新) : 更新
+				...
+			不存在
+			  判断参数
+			    ...
+		)
+	  }
+	  
+	  CustomerDao{
+		find()
+		findAll()
+		add()
+	  }
+	  
+	  AccountDao{
+		add()
+		withdrawFree()
+		depositFree()
+		find()
+		findAll()
+	  }
+	  
+	  FixeddepositDao{
+		depositFixed()
+		autotransfer()
+		withdrawFixed()
+		find()
+		findAll()
+	  }
+	  
+	  HistoryDao{
+		find()
+		findAll()
+	  
+	utils
+	  commonUtils{
+	    md5
+		uuid
+		cundanhao
+	  }
+	  
+	entity
+	  user{id,password,powerid,powername,verifyCode(对应表单)}
+	  customer{id,name,address,phonenumber}
+	  account{id,cust_id,typeid,typename,createdate,fixed,free}	    		
+	  fixeddeposit{id,account_id,money,begindate,months,statusid,statusname,bonusrateid,bonusrate,bonusratedesc}
+	  history(id,account_id,isfixed,money,description)
+	  
+	servlet
+	  BaseServlet {
+	    处理中文乱码
+		处理重定向，转发等
+		
+	  }
+	  
+		
+
+(1) 工作人员根据口令进入系统；口令可由管理员进行添加、修改或删除。
+
+(2) 定期存款：可以录入新的存单信息（储户姓名，身份证编号，住址，联系电话，存款金额，存期，密码，到期自动转存到活期），利率在存期决定后自动得到。存单的编号系统自动生成；
+
+(3) 活期存取款：根据客户的存折或者银行卡，执行活期存款或取款业务。
+
+(4) 定期取款：分到期和未到期两种情况。对于到期的存单，无需提供身份证。未到期的存单，系统需要核对身份证。直接根据存单编号和密码可以完成储户取款操作，自动算清应支付的利息并显示在屏幕上。 
+
+系统管理员可以修改各种定期和活期利率，可以管理普通工作人员的口令。
+
+银行卡或者存单的账号查询：根据银行卡号、存单编号、 身份证或者名字，执行相应的查询操作，比如明细查询等。
